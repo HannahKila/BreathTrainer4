@@ -62,6 +62,37 @@ button { font: inherit; }
 @media (min-width: 500px) { .app { min-height: 874px; } .bottom-nav { position: absolute; } }
 @media (max-width: 370px) { .app { padding-left: 22px; padding-right: 22px; } .result-grid { column-gap: 16px; } .metric-card { padding-left: 12px; } }
 
+/* 欢迎页 */
+.welcome { position: fixed; z-index: 20; top: 0; bottom: 0; left: 50%; width: min(100%, 430px); transform: translateX(-50%); overflow: hidden; background: #e8b09f; color: #fff6f1; }
+@media (min-width: 500px) { .welcome { position: absolute; inset: 0; left: 0; width: 100%; transform: none; } }
+.welcome.leaving { animation: welcome-leave .65s ease-in forwards; }
+@keyframes welcome-leave { to { opacity: 0; filter: blur(6px); } }
+.welcome-bg { position: absolute; inset: 0; pointer-events: none; }
+.welcome-blob { position: absolute; left: 12%; right: -25%; top: 36%; bottom: -12%; border-radius: 48% 52% 0 0 / 22% 22% 0 0; background: radial-gradient(ellipse at 45% 30%, #c95f45, #c1513a 60%, #bb4c35); filter: blur(18px); animation: welcome-blob 14s ease-in-out infinite alternate; }
+@keyframes welcome-blob {
+  0% { transform: translate(0, 0) scale(1); border-radius: 48% 52% 0 0 / 22% 22% 0 0; }
+  50% { transform: translate(-10px, -14px) scale(1.02); border-radius: 55% 45% 0 0 / 26% 18% 0 0; }
+  100% { transform: translate(8px, 6px) scale(.99); border-radius: 44% 56% 0 0 / 18% 26% 0 0; }
+}
+.welcome-glow { position: absolute; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255, 255, 255, .95), rgba(255, 245, 240, .55) 45%, transparent 72%); filter: blur(14px); }
+.welcome-glow-left { width: 120px; height: 360px; left: -70px; top: 44%; animation: welcome-glow 11s ease-in-out infinite alternate; }
+.welcome-glow-right { width: 90px; height: 170px; right: -55px; top: 34%; animation: welcome-glow 9s ease-in-out infinite alternate-reverse; }
+@keyframes welcome-glow { from { transform: translateY(0) scale(1); opacity: .9; } to { transform: translateY(-24px) scale(1.08); opacity: 1; } }
+.welcome-grain { position: absolute; inset: 0; opacity: .22; mix-blend-mode: soft-light; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.welcome-status { position: relative; margin: 0; color: #fff6f1; }
+.welcome-status .status-icons i:first-child { background: linear-gradient(to right, #fff6f1 0 3px, transparent 3px 5px, #fff6f1 5px 8px, transparent 8px 10px, #fff6f1 10px 14px, transparent 14px 16px, #fff6f1 16px 19px); }
+.welcome-status .status-icons i:nth-child(2), .welcome-status .status-icons b { border-color: #fff6f1; }
+.welcome-status .status-icons i:nth-child(2) { border-top-color: transparent; border-left-color: transparent; }
+.welcome-status .status-icons b:before, .welcome-status .status-icons b:after { background: #fff6f1; }
+.welcome-title { position: absolute; left: 0; right: 0; top: 37%; text-align: center; animation: welcome-in 1s ease-out both; }
+.welcome-title p { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: .2px; opacity: .95; }
+.welcome-title h1 { margin: 4px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -.3px; }
+.welcome-start { position: absolute; left: 50%; top: 59%; width: 196px; height: 196px; margin-left: -98px; border-radius: 50%; border: 1.5px solid rgba(255, 235, 228, .55); background: rgba(214, 135, 112, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 2px 6px rgba(255, 230, 220, .25), 0 10px 30px rgba(120, 40, 25, .18); color: #fff6f1; font: inherit; font-size: 30px; font-weight: 800; cursor: pointer; animation: welcome-in 1s ease-out .2s both, welcome-pulse 4s ease-in-out 1.2s infinite; transition: background .2s ease; }
+.welcome-start:hover { background: rgba(220, 145, 122, .7); }
+@keyframes welcome-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes welcome-pulse { 0%, 100% { box-shadow: inset 0 2px 6px rgba(255, 230, 220, .25), 0 10px 30px rgba(120, 40, 25, .18), 0 0 0 0 rgba(255, 220, 205, .0); } 50% { box-shadow: inset 0 2px 6px rgba(255, 230, 220, .25), 0 10px 30px rgba(120, 40, 25, .18), 0 0 0 14px rgba(255, 220, 205, .14); } }
+@media (prefers-reduced-motion: reduce) { .welcome-blob, .welcome-glow, .welcome-start { animation: none; } }
+
 /* 上一次尝试的参考曲线 */
 .ghost-line { fill: none; stroke: #c9553a; stroke-width: 1.8; stroke-dasharray: 5 5; stroke-linecap: round; opacity: .42; }
 
@@ -92,7 +123,7 @@ button { font: inherit; }
 .page-train .jelly-2 { top: 300px; left: -200px; width: 400px; height: 460px; opacity: .85; }
 .page-train .jelly-3, .page-train .jelly-4 { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .jelly { animation: none; } }
-.app > :not(.jelly-bg):not(.bottom-nav):not(.status-hidden) { position: relative; z-index: 1; }
+.app > :not(.jelly-bg):not(.bottom-nav):not(.status-hidden):not(.welcome) { position: relative; z-index: 1; }
 
 /* 毛玻璃卡片 */
 .glass { background: linear-gradient(160deg, rgba(255, 255, 255, .62), rgba(255, 246, 241, .32)); border: 1.5px solid rgba(255, 255, 255, .75); box-shadow: inset 0 1px 2px rgba(255, 255, 255, .9), inset 0 -6px 14px rgba(217, 103, 74, .05), 0 6px 18px rgba(160, 80, 55, .07); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }

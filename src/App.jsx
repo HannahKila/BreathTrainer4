@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import HomePage from './HomePage.jsx'
 import RankPage from './RankPage.jsx'
+import WelcomePage from './WelcomePage.jsx'
 import {
   addHistory,
   downsampleCurve,
@@ -70,6 +71,8 @@ function App() {
   const [samples, setSamples] = useState([])
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('Train')
+  // 每次打开 App 先显示欢迎页,点 Start 进入 Train 页
+  const [showWelcome, setShowWelcome] = useState(true)
   const [profile, setProfile] = useState(loadProfile)
   const [history, setHistory] = useState(loadHistory)
   // 已保存过的那次练习(用开始时间标识),避免重复保存
@@ -1137,6 +1140,15 @@ function App() {
           <span>Rank</span>
         </button>
       </nav>
+
+      {showWelcome && (
+        <WelcomePage
+          onStart={() => {
+            setActiveTab('Train')
+            setShowWelcome(false)
+          }}
+        />
+      )}
 
       <div className="status-hidden" aria-live="polite">
         {status} · {isConnected
