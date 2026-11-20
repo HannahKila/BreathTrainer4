@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Arduino WiFi password
+arduino/**/arduino_secrets.h

@@ -49,7 +49,11 @@ button { font: inherit; }
 .metric-card span { font-size: 14px; line-height: 1.1; color: var(--ink-soft); }
 .metric-card strong small { font-size: 12px; color: var(--ink-soft); font-weight: 400; }
 .metric-card strong { align-self: center; margin-bottom: 24px; font-size: 17px; font-weight: 600; line-height: 1; color: var(--accent); white-space: nowrap; }
-.connection-controls { display: flex; gap: 8px; margin-top: 14px; }
+.connection-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.sensor-status { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 20px; border: 1px solid rgba(217, 103, 74, .3); background: rgba(255, 250, 246, .8); color: var(--ink-soft); font-size: 11px; }
+.sensor-status i { width: 7px; height: 7px; border-radius: 50%; background: #c4aaa0; }
+.sensor-status.live { color: var(--ink); }
+.sensor-status.live i { background: #4caf7a; box-shadow: 0 0 0 3px rgba(76, 175, 122, .18); }
 .connect-button, .session-button { border: 1px solid rgba(217, 103, 74, .4); background: #fff8f4; color: var(--accent); border-radius: 20px; padding: 8px 12px; font-size: 11px; cursor: pointer; }
 .session-button:disabled { opacity: .45; cursor: not-allowed; }
 .error-text { font-size: 11px; color: #b8432a; overflow-wrap: anywhere; }

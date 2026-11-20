@@ -79,6 +79,10 @@ function App() {
   const savedSessionRef = useRef(null)
 
   const portRef = useRef(null)
+  const eventSourceRef = useRef(null)
+  // 'connecting' | 'ready'(桥接在线) | 'unavailable'(没有桥接,比如静态部署)
+  const [bridgeState, setBridgeState] = useState('connecting')
+  const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator
   const readerRef = useRef(null)
   const startedAtRef = useRef(null)
   const activeRef = useRef(false)
@@ -101,9 +105,137 @@ function App() {
   // 平滑后的气压大小,用来判断是否还在吹气(过滤单个噪声尖峰)
   const recentReadingsRef = useRef([])
 
+  // 处理传感器发来的一个读数(USB 和 WiFi 共用)
+  function handleReading(text) {
+    const reading = Number(String(text).trim())
+    if (String(text).trim() === '' || !Number.isFinite(reading)) return
+
+    const now = Date.now()
+
+    // 记录最近一段时间的读数,判断气压是否稳定不变
+    const recent = recentReadingsRef.current
+    recent.push({ time: now, value: reading })
+    while (recent.length > 0 && recent[0].time < now - RESTING_WINDOW_MS) {
+      recent.shift()
+    }
+    const recentValues = recent.map(r => r.value)
+    const isResting =
+      recent.length >= 5 &&
+      recent[recent.length - 1].time - recent[0].time >= RESTING_WINDOW_MS * 0.8 &&
+      Math.max(...recentValues) - Math.min(...recentValues) < RESTING_RANGE
+
+    // 减去静止零点:
+    // - 读数接近零点 → 缓慢跟踪(抵消小漂移)
+    // - 读数稳定不动(没在吹,只是零点漂到别处) → 较快地重新归零
+    if (baselineRef.current === null) baselineRef.current = reading
+    const offset = reading - baselineRef.current
+    if (isResting) {
+      baselineRef.current += offset * RESTING_REZERO_RATE
+    } else if (Math.abs(offset) < BASELINE_TRACK_BAND) {
+      baselineRef.current += offset * BASELINE_TRACK_RATE
+    }
+    const parsed = reading - baselineRef.current
+
+    setStatus('Connected · Receiving data')
+
+    // 记录第一次和最后一次吹气的时间,结束时用来裁掉首尾的空白
+    if (
+      activeRef.current &&
+      !isResting &&
+      Math.abs(parsed) >= BLOW_START_THRESHOLD
+    ) {
+      if (!hasBlownRef.current) firstBlowAtRef.current = now
+      hasBlownRef.current = true
+      lastBlowAtRef.current = now
+    }
+
+    // 还没开始练习时,一吹气就自动开始(结果页上不会自动开始,
+    // 以免把刚出来的结果冲掉,要用 Begin session 重新开始)
+    if (!activeRef.current && !sessionCompleteRef.current) {
+      const blowingNow = !isResting && Math.abs(parsed) >= BLOW_START_THRESHOLD
+      autoStartCountRef.current = blowingNow ? autoStartCountRef.current + 1 : 0
+      if (autoStartCountRef.current >= START_CONFIRM_SAMPLES) {
+        startSession({ keepRecent: true })
+      }
+    }
+
+    setSamples(previous => {
+      // Keep the completed session frozen until the next session starts.
+      if (sessionCompleteRef.current) return previous
+
+      const next = [
+        ...previous,
+        { time: now, value: parsed }
+      ]
+
+      // Keep all samples during a session so the final result can show
+      // the complete curve. Outside a session, only keep the live window.
+      // 按时间保留(窗口 + 2 秒余量),这样平滑算法的"起步段"落在
+      // 画面左边之外,曲线移到左边缘时不会自己往下掉。
+      return activeRef.current
+        ? next
+        : next.filter(s => s.time >= now - WINDOW_MS - 2000)
+    })
+  }
+
+  function resetConnectionState() {
+    baselineRef.current = null
+    recentReadingsRef.current = []
+    timeOriginRef.current = Date.now()
+  }
+
+  // 主要连接方式:运行 `npm run dev` 的电脑通过 USB 读 Arduino(sensor-bridge.js),
+  // 再把读数推给所有打开这个网页的浏览器 —— 电脑自己的和同一网络里的手机。
+  // 和网页同源(/sensor/stream),所以不用填 IP。
+  function connectBridge() {
+    eventSourceRef.current?.close()
+    setError('')
+    setStatus('Connecting...')
+    setBridgeState('connecting')
+
+    const source = new EventSource('/sensor/stream')
+    eventSourceRef.current = source
+    let opened = false
+
+    source.onopen = () => {
+      opened = true
+      setBridgeState('ready')
+    }
+    // 桥接告诉我们 Arduino 有没有插着
+    source.addEventListener('status', event => {
+      const { connected } = JSON.parse(event.data)
+      if (connected) resetConnectionState()
+      setIsConnected(connected)
+      setStatus(connected ? 'Connected · Receiving data' : 'Waiting for Arduino on USB...')
+    })
+    source.onmessage = event => {
+      for (const line of event.data.split('\n')) handleReading(line)
+    }
+    source.onerror = () => {
+      if (!opened) {
+        // 没有桥接(比如网页是静态部署的):退回到浏览器直连 USB
+        source.close()
+        eventSourceRef.current = null
+        setBridgeState('unavailable')
+        setIsConnected(false)
+        setStatus('Disconnected')
+      } else {
+        setIsConnected(false)
+        setStatus('Reconnecting...')
+      }
+    }
+  }
+
+  // 打开网页就自动连上桥接
+  useEffect(() => {
+    connectBridge()
+    return () => eventSourceRef.current?.close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function connectSerial() {
     if (!('serial' in navigator)) {
-      setError('Web Serial is not supported. Please use Chrome.')
+      setError('USB connection is not supported in this browser. Use desktop Chrome or Edge.')
       return
     }
 
@@ -115,9 +247,7 @@ function App() {
       await port.open({ baudRate: 115200 })
 
       portRef.current = port
-      baselineRef.current = null
-      recentReadingsRef.current = []
-      timeOriginRef.current = Date.now()
+      resetConnectionState()
       setIsConnected(true)
       setStatus('Connected · Waiting for data')
 
@@ -138,78 +268,7 @@ function App() {
           buffer = lines.pop() ?? ''
 
           for (const line of lines) {
-            const reading = Number(line.trim())
-
-            if (line.trim() === '' || !Number.isFinite(reading)) {
-              continue
-            }
-
-            const now = Date.now()
-
-            // 记录最近一段时间的读数,判断气压是否稳定不变
-            const recent = recentReadingsRef.current
-            recent.push({ time: now, value: reading })
-            while (recent.length > 0 && recent[0].time < now - RESTING_WINDOW_MS) {
-              recent.shift()
-            }
-            const recentValues = recent.map(r => r.value)
-            const isResting =
-              recent.length >= 5 &&
-              recent[recent.length - 1].time - recent[0].time >= RESTING_WINDOW_MS * 0.8 &&
-              Math.max(...recentValues) - Math.min(...recentValues) < RESTING_RANGE
-
-            // 减去静止零点:
-            // - 读数接近零点 → 缓慢跟踪(抵消小漂移)
-            // - 读数稳定不动(没在吹,只是零点漂到别处) → 较快地重新归零
-            if (baselineRef.current === null) baselineRef.current = reading
-            const offset = reading - baselineRef.current
-            if (isResting) {
-              baselineRef.current += offset * RESTING_REZERO_RATE
-            } else if (Math.abs(offset) < BASELINE_TRACK_BAND) {
-              baselineRef.current += offset * BASELINE_TRACK_RATE
-            }
-            const parsed = reading - baselineRef.current
-
-            setStatus('Connected · Receiving data')
-
-            // 记录第一次和最后一次吹气的时间,结束时用来裁掉首尾的空白
-            if (
-              activeRef.current &&
-              !isResting &&
-              Math.abs(parsed) >= BLOW_START_THRESHOLD
-            ) {
-              if (!hasBlownRef.current) firstBlowAtRef.current = now
-              hasBlownRef.current = true
-              lastBlowAtRef.current = now
-            }
-
-            // 还没开始练习时,一吹气就自动开始(结果页上不会自动开始,
-            // 以免把刚出来的结果冲掉,要用 Begin session 重新开始)
-            if (!activeRef.current && !sessionCompleteRef.current) {
-              const blowingNow = !isResting && Math.abs(parsed) >= BLOW_START_THRESHOLD
-              autoStartCountRef.current = blowingNow ? autoStartCountRef.current + 1 : 0
-              if (autoStartCountRef.current >= START_CONFIRM_SAMPLES) {
-                startSession({ keepRecent: true })
-              }
-            }
-
-            setSamples(previous => {
-              // Keep the completed session frozen until the next session starts.
-              if (sessionCompleteRef.current) return previous
-
-              const next = [
-                ...previous,
-                { time: now, value: parsed }
-              ]
-
-              // Keep all samples during a session so the final result can show
-              // the complete curve. Outside a session, only keep the live window.
-              // 按时间保留(窗口 + 2 秒余量),这样平滑算法的"起步段"落在
-              // 画面左边之外,曲线移到左边缘时不会自己往下掉。
-              return activeRef.current
-                ? next
-                : next.filter(s => s.time >= now - WINDOW_MS - 2000)
-            })
+            handleReading(line)
           }
         }
       } finally {
@@ -339,6 +398,7 @@ function App() {
     return () => {
       activeRef.current = false
       readerRef.current?.cancel().catch(() => {})
+      eventSourceRef.current?.close()
       window.clearInterval(sessionTimerRef.current)
       window.clearTimeout(finishTimerRef.current)
     }
@@ -1080,20 +1140,31 @@ function App() {
       )}
 
       <div className="connection-controls">
-        {!isConnected ? (
-          <button
-            onClick={connectSerial}
-            className="connect-button"
-          >
-            Connect sensor
+        {bridgeState !== 'unavailable' ? (
+          // 通过电脑上的桥接连接(电脑和手机都一样)
+          <span className={`sensor-status${isConnected ? ' live' : ''}`}>
+            <i aria-hidden="true" />
+            {isConnected
+              ? 'Sensor connected'
+              : bridgeState === 'connecting'
+                ? 'Connecting...'
+                : 'Plug the Arduino into the computer running the app'}
+          </span>
+        ) : isConnected ? (
+          <button onClick={disconnectSerial} className="connect-button">
+            Disconnect USB
           </button>
         ) : (
-          <button
-            onClick={disconnectSerial}
-            className="connect-button"
-          >
-            Disconnect sensor
-          </button>
+          <>
+            {serialSupported && (
+              <button onClick={connectSerial} className="connect-button">
+                Connect USB
+              </button>
+            )}
+            <button onClick={connectBridge} className="connect-button">
+              Retry bridge
+            </button>
+          </>
         )}
 
         <button
